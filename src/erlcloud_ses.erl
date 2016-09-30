@@ -75,23 +75,23 @@
 %%% Library initialization
 %%%------------------------------------------------------------------------------
 
--spec(new/2 :: (string(), string()) -> aws_config()).
+-spec new(string(), string()) -> aws_config().
 new(AccessKeyID, SecretAccessKey) ->
     #aws_config{access_key_id=AccessKeyID,
                 secret_access_key=SecretAccessKey}.
 
--spec(new/3 :: (string(), string(), string()) -> aws_config()).
+-spec new(string(), string(), string()) -> aws_config().
 new(AccessKeyID, SecretAccessKey, Host) ->
     #aws_config{access_key_id=AccessKeyID,
                 secret_access_key=SecretAccessKey,
                 ses_host=Host}.
 
--spec(configure/2 :: (string(), string()) -> ok).
+-spec configure(string(), string()) -> ok.
 configure(AccessKeyID, SecretAccessKey) ->
     put(aws_config, new(AccessKeyID, SecretAccessKey)),
     ok.
 
--spec(configure/3 :: (string(), string(), string()) -> ok).
+-spec configure(string(), string(), string()) -> ok.
 configure(AccessKeyID, SecretAccessKey, Host) ->
     put(aws_config, new(AccessKeyID, SecretAccessKey, Host)),
     ok.
@@ -935,6 +935,7 @@ decode_error_code("InvalidParameterCombination") -> invalid_parameter_combinatio
 decode_error_code("InvalidParameterValue") -> invalid_parameter_value;
 decode_error_code("InvalidQueryParameter") -> invalid_query_parameter;
 decode_error_code("MalformedQueryString") -> malformed_query_string;
+decode_error_code("MessageRejected") -> message_rejected;
 decode_error_code("MissingAction") -> missing_action;
 decode_error_code("MissingAuthenticationToken") -> missing_authentication_token;
 decode_error_code("MissingParameter") -> missing_parameter;

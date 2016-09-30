@@ -9,6 +9,7 @@
           s3_bucket_after_host=false::boolean(),
           sdb_host="sdb.amazonaws.com"::string(),
           elb_host="elasticloadbalancing.amazonaws.com"::string(),
+          rds_host="rds.us-east-1.amazonaws.com"::string(),
           ses_host="email.us-east-1.amazonaws.com"::string(),
           sqs_host="queue.amazonaws.com"::string(),
           sqs_protocol=undefined::string()|undefined,
@@ -33,13 +34,24 @@
           cloudtrail_scheme="https://"::string(),
           cloudtrail_host="cloudtrail.amazonaws.com"::string(),
           cloudtrail_port=80::non_neg_integer(),
+          cloudformation_host="cloudformation.us-east-1.amazonaws.com"::string(),
+          waf_scheme="https://"::string(),
+          waf_host="waf.amazonaws.com"::string(),
+          waf_port=443::non_neg_integer(),
           access_key_id::string()|undefined|false,
           secret_access_key::string()|undefined|false,
           security_token=undefined::string()|undefined,
-          timeout=10000::timeout(),
+          %% epoch seconds when temporary credentials will expire
+          expiration=undefined :: pos_integer()|undefined,
+          %% Network request timeout; if not specifed, the default timeout will be used:
+          %% ddb: 1s for initial call, 10s for subsequence;
+          %% s3:delete_objects_batch/{2,3}, cloudtrail: 1s;
+          %% other services: 10s.
+          timeout=undefined::timeout()|undefined,
           cloudtrail_raw_result=false::boolean(),
           http_client=lhttpc::erlcloud_httpc:request_fun(), %% If using hackney, ensure that it is started.
           hackney_pool=default::atom(), %% The name of the http request pool hackney should use.
+          lhttpc_pool=undefined::atom(), %% The name of the http request pool lhttpc should use.
           %% Default to not retry failures (for backwards compatability).
           %% Recommended to be set to default_retry to provide recommended retry behavior.
           %% Currently only affects S3, but intent is to change other services to use this as well.
@@ -52,7 +64,7 @@
 -record(aws_request,
         {
           %% Provided by requesting service
-          service :: s3,
+          service :: s3|waf,
           uri :: string() | binary(),
           method :: atom(),
           request_headers :: [{string(), string()}],
@@ -60,14 +72,16 @@
 
           %% Read from response
           attempt = 0 :: integer(),
-          response_type :: ok | error,
-          error_type :: aws | httpc,
-          httpc_error_reason :: term(),
-          response_status :: pos_integer(),
-          response_status_line :: string(),
-          response_headers :: [{string(), string()}],
-          response_body :: binary(),
+          response_type :: ok | error | undefined,
+          error_type :: aws | httpc | undefined,
+          httpc_error_reason :: term() | undefined,
+          response_status :: pos_integer() | undefined,
+          response_status_line :: string() | undefined,
+          response_headers :: [{string(), string()}] | undefined,
+          response_body :: binary() | undefined,
 
           %% Service specific error information
-          should_retry :: boolean()
+          should_retry :: boolean() | undefined
         }).
+
+-type(aws_request() :: #aws_request{}).

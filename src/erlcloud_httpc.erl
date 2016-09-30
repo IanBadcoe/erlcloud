@@ -43,10 +43,19 @@ request(URL, Method, Hdrs, Body, Timeout,
     when is_function(F, 6) ->
     F(URL, Method, Hdrs, Body, Timeout, Config).
 
-request_lhttpc(URL, Method, Hdrs, Body, Timeout, _Config) ->
-    lhttpc:request(URL, Method, Hdrs, Body, Timeout, []).
+request_lhttpc(URL, Method, Hdrs, Body, Timeout, #aws_config{lhttpc_pool = undefined}) ->
+    lhttpc:request(URL, Method, Hdrs, Body, Timeout, []);
+request_lhttpc(URL, Method, Hdrs, Body, Timeout, #aws_config{lhttpc_pool = Pool}) ->
+    lhttpc:request(URL, Method, Hdrs, Body, Timeout, [{pool, Pool}]).
 
-request_httpc(URL, Method, Hdrs, <<>>, Timeout, _Config) ->
+%% Guard clause protects against empty bodied requests from being
+%% unable to find a matching httpc:request call.
+request_httpc(URL, Method, Hdrs, <<>>, Timeout, _Config) 
+    when (Method =:= options) orelse 
+         (Method =:= get) orelse 
+         (Method =:= head) orelse 
+         (Method =:= delete) orelse 
+         (Method =:= trace) ->
     HdrsStr = [{to_list_string(K), to_list_string(V)} || {K, V} <- Hdrs],
     response_httpc(httpc:request(Method, {URL, HdrsStr},
                                  [{timeout, Timeout}],

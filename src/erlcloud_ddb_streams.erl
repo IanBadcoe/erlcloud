@@ -90,25 +90,25 @@
 %%% Library initialization.
 %%%------------------------------------------------------------------------------
 
--spec(new/2 :: (string(), string()) -> aws_config()).
+-spec new(string(), string()) -> aws_config().
 new(AccessKeyID, SecretAccessKey) ->
     #aws_config{access_key_id=AccessKeyID,
                 secret_access_key=SecretAccessKey,
                 retry = fun erlcloud_retry:default_retry/1}.
 
--spec(new/3 :: (string(), string(), string()) -> aws_config()).
+-spec new(string(), string(), string()) -> aws_config().
 new(AccessKeyID, SecretAccessKey, Host) ->
     #aws_config{access_key_id=AccessKeyID,
                 secret_access_key=SecretAccessKey,
                 ddb_streams_host=Host,
                 retry = fun erlcloud_retry:default_retry/1}.
 
--spec(configure/2 :: (string(), string()) -> ok).
+-spec configure(string(), string()) -> ok.
 configure(AccessKeyID, SecretAccessKey) ->
     put(aws_config, new(AccessKeyID, SecretAccessKey)),
     ok.
 
--spec(configure/3 :: (string(), string(), string()) -> ok).
+-spec configure(string(), string(), string()) -> ok.
 configure(AccessKeyID, SecretAccessKey, Host) ->
     put(aws_config, new(AccessKeyID, SecretAccessKey, Host)),
     ok.
@@ -895,14 +895,8 @@ headers(Config, Operation, Body) ->
     Headers = [{"host", Config#aws_config.ddb_streams_host},
                {"x-amz-target", Operation},
                {"content-type", "application/x-amz-json-1.0"}],
-    Region =
-        case string:tokens(Config#aws_config.ddb_streams_host, ".") of
-            [_, _, Value, _, _] ->
-                Value;
-            _ ->
-                "us-east-1"
-        end,
-    erlcloud_aws:sign_v4(Config, Headers, Body, Region, "dynamodb").
+    Region = erlcloud_aws:aws_region_from_host(Config#aws_config.ddb_streams_host),
+    erlcloud_aws:sign_v4_headers(Config, Headers, Body, Region, "dynamodb").
 
 uri(#aws_config{ddb_streams_scheme = Scheme, ddb_streams_host = Host} = Config) ->
     lists:flatten([Scheme, Host, port_spec(Config)]).

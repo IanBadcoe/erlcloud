@@ -1,6 +1,6 @@
 # erlcloud: Cloud Computing APIs For Erlang #
 
-This is version 0.8.0.  The API is subject to change.
+[![Build Status](https://secure.travis-ci.org/erlcloud/erlcloud.png?branch=master)](http://travis-ci.org/erlcloud/erlcloud)
 
 Service APIs implemented:
 
@@ -20,7 +20,7 @@ The libraries can be used two ways: either you can specify configuration paramet
 You need to clone the repository and download rebar (if it's not already available in your path).
 
 ```
-git clone https://github.com/gleber/erlcloud.git
+git clone https://github.com/erlcloud/erlcloud.git
 cd erlcloud
 wget http://cloud.github.com/downloads/basho/rebar/rebar && chmod u+x rebar
 ```
@@ -89,6 +89,26 @@ For usage information, consult the source code and refer to the API reference at
 - http://docs.aws.amazon.com/AWSEC2/latest/APIReference/Welcome.html
 - http://docs.aws.amazon.com/AmazonS3/latest/API/Welcome.html
 - http://docs.amazonwebservices.com/AmazonSimpleDB/latest/DeveloperGuide/
+
+### Using Temporary Security Credentials
+
+The access to AWS resource might be managed through [third-party identity provider](http://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-idp.html). The access is managed using [temporary security credentials](http://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_use-resources.html).  
+
+You can provide your amazon credentials in environmental variables.
+
+```
+export AWS_ACCESS_KEY_ID=<Your AWS Access Key>
+export AWS_SECRET_ACCESS_KEY=<Your AWS Secret Access Key>
+export AWS_SECURITY_TOKEN=<Your AWS Security Token>
+```
+
+
+If you did not provide your amazon credentials in the environmental variables, then you need to provide configuration read from your profile:
+
+```
+{ok, Conf} = erlcloud_aws:profile().
+erlcloud_s3:list_buckets(Conf).
+```
 
 ## Roadmap ##
 

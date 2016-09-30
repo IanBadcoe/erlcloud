@@ -1,8 +1,9 @@
 %% Amazon Simple Storage Service (S3)
 
 -module(erlcloud_s3).
--export([new/2, new/3, new/4, configure/2, configure/3, configure/4,
-         create_bucket/1, create_bucket/2, create_bucket/3,
+-export([new/2, new/3, new/4, new/5,
+         configure/2, configure/3, configure/4, configure/5,
+         create_bucket/1, create_bucket/2, create_bucket/3, create_bucket/4,
          delete_bucket/1, delete_bucket/2,
          get_bucket_attribute/2, get_bucket_attribute/3,
          list_buckets/0, list_buckets/1,
@@ -33,8 +34,8 @@
          get_bucket_and_key/1
         ]).
 
--include_lib("erlcloud/include/erlcloud.hrl").
--include_lib("erlcloud/include/erlcloud_aws.hrl").
+-include("erlcloud.hrl").
+-include("erlcloud_aws.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 %%% Note that get_bucket_and_key/1 may be used to obtain the Bucket and Key to pass to various
@@ -68,6 +69,17 @@ new(AccessKeyID, SecretAccessKey, Host, Port) ->
        s3_port=Port
       }.
 
+-spec new(string(), string(), string(), non_neg_integer(), string()) -> aws_config().
+
+new(AccessKeyID, SecretAccessKey, Host, Port, Scheme) ->
+    #aws_config{
+       access_key_id=AccessKeyID,
+       secret_access_key=SecretAccessKey,
+       s3_host=Host,
+       s3_port=Port,
+       s3_scheme=Scheme
+      }.
+
 -spec configure(string(), string()) -> ok.
 
 configure(AccessKeyID, SecretAccessKey) ->
@@ -84,6 +96,12 @@ configure(AccessKeyID, SecretAccessKey, Host) ->
 
 configure(AccessKeyID, SecretAccessKey, Host, Port) ->
     put(aws_config, new(AccessKeyID, SecretAccessKey, Host, Port)),
+    ok.
+
+-spec configure(string(), string(), string(), non_neg_integer(), string()) -> ok.
+
+configure(AccessKeyID, SecretAccessKey, Host, Port, Scheme) ->
+    put(aws_config, new(AccessKeyID, SecretAccessKey, Host, Port, Scheme)),
     ok.
 
 -type s3_bucket_attribute_name() :: acl
@@ -222,8 +240,13 @@ delete_objects_batch(Bucket, KeyList, Config) ->
                {"content-md5", binary_to_list(ContentMD5)},
                {"content-length", Len}],
     Result = erlcloud_httpc:request(
-        Url, "POST", Headers, Payload, 1000, Config),
+        Url, "POST", Headers, Payload, delete_objects_batch_timeout(Config), Config),
     erlcloud_aws:http_headers_body(Result).
+
+delete_objects_batch_timeout(#aws_config{timeout = undefined}) ->
+    1000;
+delete_objects_batch_timeout(#aws_config{timeout = Timeout}) ->
+    Timeout.
 
 % returns paths list from AWS S3 root directory, used as input to delete_objects_batch
 % example : 
@@ -305,7 +328,7 @@ list_buckets(Config) ->
 % @doc Get S3 bucket policy JSON object
 % API Document: http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETacl.html
 %
--spec(get_bucket_policy/1 :: (BucketName::string()) -> ok | {error, Reason::term()}).
+-spec get_bucket_policy(BucketName::string()) -> ok | {error, Reason::term()}.
 get_bucket_policy(BucketName) ->
     get_bucket_policy(BucketName, default_config()).
 
@@ -321,7 +344,7 @@ get_bucket_policy(BucketName) ->
 %                                   <RequestId>DC1EA9456B266EF5</RequestId>
 %                                   <HostId>DRtkAB80cAeom+4ffSGU3PFCxS7QvtiW+wxLnPF0dM2nxoaRqQk1SK/z62ZJVHAD</HostId>
 %                               </Error>"}}
--spec(get_bucket_policy/2 :: (BucketName::string(), Config::aws_config()) -> {ok, Policy::string()} | {error, Reason::term()}).
+-spec get_bucket_policy(BucketName::string(), Config::aws_config()) -> {ok, Policy::string()} | {error, Reason::term()}.
 get_bucket_policy(BucketName, Config)
     when is_record(Config, aws_config) ->
         case s3_request2(Config, get, BucketName, "/", "policy", [], <<>>, []) of
@@ -368,6 +391,7 @@ list_objects(BucketName, Options, Config)
     Attributes = [{name, "Name", text},
                   {prefix, "Prefix", text},
                   {marker, "Marker", text},
+                  {next_marker, "NextMarker", text},
                   {delimiter, "Delimiter", text},
                   {max_keys, "MaxKeys", integer},
                   {is_truncated, "IsTruncated", boolean},
@@ -497,7 +521,8 @@ get_object(BucketName, Key, Options, Config) ->
                       Version   -> ["versionId=", Version]
                   end,
     {Headers, Body} = s3_request(Config, get, BucketName, [$/|Key], Subresource, [], <<>>, RequestHeaders),
-    [{etag, proplists:get_value("etag", Headers)},
+    [{last_modified, proplists:get_value("last-modified", Headers)},
+     {etag, proplists:get_value("etag", Headers)},
      {content_length, proplists:get_value("content-length", Headers)},
      {content_type, proplists:get_value("content-type", Headers)},
      {content_encoding, proplists:get_value("content-encoding", Headers)},
@@ -649,12 +674,12 @@ extract_bucket(Node) ->
                          {creation_date, "CreationDate", time}],
                         Node).
 
--spec put_object(string(), string(), iolist()) -> proplist().
+-spec put_object(string(), string(), iodata()) -> proplist().
 
 put_object(BucketName, Key, Value) ->
     put_object(BucketName, Key, Value, []).
 
--spec put_object(string(), string(), iolist(), proplist() | aws_config()) -> proplist().
+-spec put_object(string(), string(), iodata(), proplist() | aws_config()) -> proplist().
 
 put_object(BucketName, Key, Value, Config)
   when is_record(Config, aws_config) ->
@@ -663,7 +688,7 @@ put_object(BucketName, Key, Value, Config)
 put_object(BucketName, Key, Value, Options) ->
     put_object(BucketName, Key, Value, Options, default_config()).
 
--spec put_object(string(), string(), iolist(), proplist(), [{string(), string()}] | aws_config()) -> proplist().
+-spec put_object(string(), string(), iodata(), proplist(), [{string(), string()}] | aws_config()) -> proplist().
 
 put_object(BucketName, Key, Value, Options, Config)
   when is_record(Config, aws_config) ->
@@ -672,7 +697,7 @@ put_object(BucketName, Key, Value, Options, Config)
 put_object(BucketName, Key, Value, Options, HTTPHeaders) ->
     put_object(BucketName, Key, Value, Options, HTTPHeaders, default_config()).
 
--spec put_object(string(), string(), iolist(), proplist(), [{string(), string()}], aws_config()) -> proplist().
+-spec put_object(string(), string(), iodata(), proplist(), [{string(), string()}], aws_config()) -> proplist().
 
 put_object(BucketName, Key, Value, Options, HTTPHeaders, Config)
   when is_list(BucketName), is_list(Key), is_list(Value) orelse is_binary(Value),
@@ -792,11 +817,11 @@ start_multipart(BucketName, Key, Options, HTTPHeaders, Config)
             Error
     end.
 
--spec upload_part(string(), string(), string(), integer(), iolist()) -> {ok, proplist()} | {error, any()}.
+-spec upload_part(string(), string(), string(), integer(), iodata()) -> {ok, proplist()} | {error, any()}.
 upload_part(BucketName, Key, UploadId, PartNumber, Value) ->
     upload_part(BucketName, Key, UploadId, PartNumber, Value, [], default_config()).
 
--spec upload_part(string(), string(), string(), integer(), iolist(), [{string(), string()}], aws_config()) -> {ok, proplist()} | {error, any()}.
+-spec upload_part(string(), string(), string(), integer(), iodata(), [{string(), string()}], aws_config()) -> {ok, proplist()} | {error, any()}.
 upload_part(BucketName, Key, UploadId, PartNumber, Value, HTTPHeaders, Config)
   when is_list(BucketName), is_list(Key), is_list(UploadId), is_integer(PartNumber),
        is_list(Value) orelse is_binary(Value),
@@ -1101,25 +1126,21 @@ s3_request2_no_update(Config, Method, Host, Path, Subresource, Params, Body, Hea
                                 end
                                ]),
 
-    Request = #aws_request{service = s3, uri = RequestURI, method = Method},
-    Request2 = case Method of
-                   M when M =:= get orelse M =:= head orelse M =:= delete ->
-                       Request#aws_request{
-                         request_headers = RequestHeaders,
-                         request_body = <<>>};
-                   _ ->
-                       Headers2 = case lists:keyfind("content-type", 1, RequestHeaders) of
-                                      false ->
-                                          [{"content-type", ContentType} | RequestHeaders];
-                                      _ ->
-                                          RequestHeaders
-                                  end,
-                       Request#aws_request{
-                         request_headers = Headers2,
-                         request_body = Body}
-               end,
-    Request3 = erlcloud_retry:request(Config, Request2, fun s3_result_fun/1),
-    erlcloud_aws:request_to_return(Request3).
+    {RequestHeaders2, RequestBody} = case Method of
+                                         M when M =:= get orelse M =:= head orelse M =:= delete ->
+                                             {RequestHeaders, <<>>};
+                                         _ ->
+                                             Headers2 = case lists:keyfind("content-type", 1, RequestHeaders) of
+                                                            false ->
+                                                                [{"content-type", ContentType} | RequestHeaders];
+                                                            _ ->
+                                                                RequestHeaders
+                                                        end,
+                                             {Headers2, Body}
+                                     end,
+    Request = #aws_request{service = s3, uri = RequestURI, method = Method, request_headers = RequestHeaders2, request_body = RequestBody},
+    Request2 = erlcloud_retry:request(Config, Request, fun s3_result_fun/1),
+    erlcloud_aws:request_to_return(Request2).
 
 s3_result_fun(#aws_request{response_type = ok} = Request) ->
     Request;

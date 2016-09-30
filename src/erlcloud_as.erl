@@ -1,7 +1,7 @@
 -module(erlcloud_as).
 
--include_lib("erlcloud/include/erlcloud_aws.hrl").
--include_lib("erlcloud/include/erlcloud_as.hrl").
+-include("erlcloud_aws.hrl").
+-include("erlcloud_as.hrl").
 
 %% AWS Autoscaling functions
 -export([describe_groups/0, describe_groups/1, describe_groups/2, describe_groups/4,
@@ -12,7 +12,14 @@
 
          describe_instances/0, describe_instances/1, describe_instances/2, 
          describe_instances/4,
-         terminate_instance/1, terminate_instance/2, terminate_instance/3]).
+         terminate_instance/1, terminate_instance/2, terminate_instance/3,
+
+         suspend_processes/1, suspend_processes/2, suspend_processes/3,
+         resume_processes/1, resume_processes/2, resume_processes/3,
+         detach_instances/2, detach_instances/3, detach_instances/4,
+
+         describe_lifecycle_hooks/1, describe_lifecycle_hooks/2, describe_lifecycle_hooks/3,
+         complete_lifecycle_action/4, complete_lifecycle_action/5]).
 
 -define(API_VERSION, "2011-01-01").
 -define(DEFAULT_MAX_RECORDS, 20).
@@ -40,6 +47,23 @@
 %% xpath for terminate instance:
 -define(TERMINATE_INSTANCE_ACTIVITY, 
         "/TerminateInstanceInAutoScalingGroupResponse/TerminateInstanceInAutoScalingGroupResult/Activity").
+
+%% xpath for suspend and resume ScalingProcesses:
+-define(SUSPEND_PROCESSES_ACTIVITY, 
+        "/SuspendProcessesResponse/ResponseMetadata/RequestId").
+-define(RESUME_PROCESSES_ACTIVITY, 
+        "/ResumeProcessesResponse/ResponseMetadata/RequestId").
+
+%% xpath for detach instances:
+-define(DETACH_INSTANCES_ACTIVITY, 
+        "/DetachInstancesResponse/DetachInstancesResult/Activities/member").
+
+-define(DESCRIBE_LIFECYCLE_HOOKS_PATH, 
+        "/DescribeLifecycleHooksResponse/DescribeLifecycleHooksResult/LifecycleHooks/member").
+
+-define(COMPLETE_LIFECYCLE_ACTION_ACTIVITY, 
+        "/CompleteLifecycleActionResponse/ResponseMetadata/RequestId").
+
 
 %% --------------------------------------------------------------------
 %% @doc Calls describe_groups([], default_configuration())
@@ -239,9 +263,9 @@ describe_instances(I, MaxRecords, none, Config) ->
 describe_instances(I, MaxRecords, NextToken, Config) ->
     describe_instances(I, [{"MaxRecords", MaxRecords}, {"NextToken", NextToken}], Config).
 
--spec describe_instances(list(string()), list({string(), string()}), aws_config()) -> 
-                                {ok, list(aws_launch_config())} | 
-                                {{paged, string()}, list(aws_launch_config)} | 
+-spec describe_instances(list(string()), list({string(), term()}), aws_config()) -> 
+                                {ok, list(aws_autoscaling_instance())} | 
+                                {{paged, string()}, list(aws_autoscaling_instance())} | 
                                 {error, term()}.                       
 describe_instances(I, Params, Config) ->
     P = member_params("InstanceIds.member.", I) ++ Params,
@@ -290,14 +314,172 @@ priv_terminate_instance(Params, Config) ->
         {error, Reason} ->
             {error, Reason}
     end.
-    
 
+%% --------------------------------------------------------------------
+%% @doc Suspends Auto Scaling processes for the specified
+%% Auto Scaling group. To suspend specific processes, use the
+%% ScalingProcesses parameter. To suspend all processes, omit the
+%% ScalingProcesses parameter.
+%% @end
+%% --------------------------------------------------------------------
+-spec suspend_processes(string()) -> {ok, string()} | {error, term()}.
+suspend_processes(GroupName) ->
+    suspend_processes(GroupName, [], erlcloud_aws:default_config()).
+
+%% --------------------------------------------------------------------
+%% @doc Suspend the processes. The 2nd parameter can be used to specify
+%% a list of ScalingProcesses or [] to suspend all
+%% Config a supplied AWS configuration.
+%% @end
+%% --------------------------------------------------------------------
+suspend_processes(GroupName, Config) when is_record(Config, aws_config) ->
+    suspend_processes(GroupName, [], Config);
+suspend_processes(GroupName, ScalingProcesses) when is_list(ScalingProcesses) ->
+    suspend_processes(GroupName, ScalingProcesses, erlcloud_aws:default_config()).
+
+-spec suspend_processes(string(), list(string()), aws_config()) -> {ok, string()} | {error, term()}.
+suspend_processes(GroupName, ScalingProcesses, Config) ->
+    Params = [{"AutoScalingGroupName", GroupName} | member_params("ScalingProcesses.member.", ScalingProcesses)],
+    case as_query(Config, "SuspendProcesses", Params, ?API_VERSION) of
+        {ok, Doc} ->
+            [RequestId] = xmerl_xpath:string(?SUSPEND_PROCESSES_ACTIVITY, Doc),
+            {ok, erlcloud_xml:get_text(RequestId)};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% --------------------------------------------------------------------
+%% @doc Resumes Auto Scaling processes for the specified
+%% Auto Scaling group. To resume specific processes, use the
+%% ScalingProcesses parameter. To resume all processes, omit the
+%% ScalingProcesses parameter.
+%% @end
+%% --------------------------------------------------------------------
+-spec resume_processes(string()) -> {ok, string()} | {error, term()}.
+resume_processes(GroupName) ->
+    resume_processes(GroupName, [], erlcloud_aws:default_config()).
+
+%% --------------------------------------------------------------------
+%% @doc Resume the processes. The 2nd parameter can be used to specify
+%% a list of ScalingProcesses or [] to resume all
+%% Config a supplied AWS configuration.
+%% @end
+%% --------------------------------------------------------------------
+resume_processes(GroupName, Config) when is_record(Config, aws_config) ->
+    resume_processes(GroupName, [], Config);
+resume_processes(GroupName, ScalingProcesses) when is_list(ScalingProcesses) ->
+    resume_processes(GroupName, ScalingProcesses, erlcloud_aws:default_config()).
+
+-spec resume_processes(string(), list(string()), aws_config()) -> {ok, string()} | {error, term()}.
+resume_processes(GroupName, ScalingProcesses, Config) ->
+    Params = [{"AutoScalingGroupName", GroupName} | member_params("ScalingProcesses.member.", ScalingProcesses)],
+    case as_query(Config, "ResumeProcesses", Params, ?API_VERSION) of
+        {ok, Doc} ->
+            [RequestId] = xmerl_xpath:string(?RESUME_PROCESSES_ACTIVITY, Doc),
+            {ok, erlcloud_xml:get_text(RequestId)};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
+%% --------------------------------------------------------------------
+%% @doc Detach the given instances from the group using the default configuration
+%% without decrementing the desired capacity of the group.
+%% @end
+%% --------------------------------------------------------------------
+-spec detach_instances(list(string()),string()) -> aws_autoscaling_activity().
+detach_instances(InstanceIds, GroupName) ->
+    detach_instances(InstanceIds, GroupName, erlcloud_aws:default_config()).
+
+%% --------------------------------------------------------------------
+%% @doc Detach the given instances from the group.  The 3rd parameter can be:
+%% 'false' to not decrement the desired capacity of the group
+%% 'true' to decrement the desired capacity of the group
+%% Config a supplied AWS configuration.
+%% @end
+%% --------------------------------------------------------------------
+-spec detach_instances(list(string()),string(), boolean() | aws_config()) -> aws_autoscaling_activity().
+detach_instances(InstanceIds, GroupName, ShouldDecrementDesiredCapacity) when is_boolean(ShouldDecrementDesiredCapacity) ->
+    detach_instances(InstanceIds, GroupName, ShouldDecrementDesiredCapacity, erlcloud_aws:default_config());
+detach_instances(InstanceIds, GroupName, Config) ->
+    detach_instances(InstanceIds, GroupName, false, Config).
+
+-spec detach_instances(list(string()),string(), boolean(), aws_config()) -> aws_autoscaling_activity().
+detach_instances(InstanceIds, GroupName, ShouldDecrementDesiredCapacity, Config) ->
+    P = case ShouldDecrementDesiredCapacity of
+            true ->
+                [{"ShouldDecrementDesiredCapacity", "true"}, {"AutoScalingGroupName", GroupName} | member_params("InstanceIds.member.", InstanceIds)];
+            false ->
+                [{"ShouldDecrementDesiredCapacity", "false"}, {"AutoScalingGroupName", GroupName} | member_params("InstanceIds.member.", InstanceIds)]
+    end,
+    case as_query(Config, "DetachInstances", P, ?API_VERSION) of
+        {ok, Doc} ->
+            Activities = [extract_as_activity(A) || A <- xmerl_xpath:string(?DETACH_INSTANCES_ACTIVITY, Doc)],
+            {ok, Activities};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
+describe_lifecycle_hooks(GroupName) ->
+    describe_lifecycle_hooks(GroupName, [], erlcloud_aws:default_config()).
+
+describe_lifecycle_hooks(GroupName, LifecycleHookNames) when is_list(LifecycleHookNames) ->
+    describe_lifecycle_hooks(GroupName, LifecycleHookNames, erlcloud_aws:default_config());
+describe_lifecycle_hooks(GroupName, Config) ->
+    describe_lifecycle_hooks(GroupName, [], Config).
+
+-spec describe_lifecycle_hooks(string(), list(string()), aws_config()) -> {ok, list(aws_autoscaling_lifecycle_hook())} | {error, term()}.
+describe_lifecycle_hooks(GroupName, LifecycleHookNames, Config) ->
+    Params = [{"AutoScalingGroupName", GroupName} | member_params("LifecycleHookNames.member.", LifecycleHookNames)],
+    case as_query(Config, "DescribeLifecycleHooks", Params, ?API_VERSION) of
+        {ok, Doc} ->
+            LifecycleHooks = xmerl_xpath:string(?DESCRIBE_LIFECYCLE_HOOKS_PATH, Doc),            
+            Hooks = [extract_lifecycle_hook(H) || H <- LifecycleHooks],
+            {ok, Hooks};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+extract_lifecycle_hook(H) -> 
+    #aws_autoscaling_lifecycle_hook{
+          group_name = erlcloud_xml:get_text("AutoScalingGroupName", H),
+          lifecycle_hook_name = erlcloud_xml:get_text("LifecycleHookName", H),
+          global_timeout = erlcloud_xml:get_integer("GlobalTimeout", H),
+          heartbeat_timeout = erlcloud_xml:get_integer("HeartbeatTimeout", H),
+          default_result = erlcloud_xml:get_text("DefaultResult", H),
+          lifecycle_transition = erlcloud_xml:get_text("LifecycleTransition", H)}.
+
+
+-spec complete_lifecycle_action(string(), string(), string(), {instance_id | token, string()}) -> {ok, string()} | {error, term()}.
+complete_lifecycle_action(GroupName, LifecycleActionResult, LifecycleHookName, InstanceIdOrLifecycleActionToken) ->
+    complete_lifecycle_action(GroupName, LifecycleActionResult, LifecycleHookName, InstanceIdOrLifecycleActionToken, erlcloud_aws:default_config()).
+
+-spec complete_lifecycle_action(string(), string(), string(), {instance_id | token, string()}, aws_config()) -> {ok, string()} | {error, term()}.
+complete_lifecycle_action(GroupName, LifecycleActionResult, LifecycleHookName, InstanceIdOrLifecycleActionToken, Config) ->
+    InstanceIdOrLifecycleActionTokenParam = case InstanceIdOrLifecycleActionToken of
+        {instance_id,InstanceId} ->
+            {"InstanceId", InstanceId};
+        {token,LifecycleActionToken} ->
+            {"LifecycleActionToken", LifecycleActionToken}
+    end,
+    Params = [{"AutoScalingGroupName", GroupName},
+              {"LifecycleActionResult", LifecycleActionResult},
+              {"LifecycleHookName", LifecycleHookName},
+              InstanceIdOrLifecycleActionTokenParam],
+    case as_query(Config, "CompleteLifecycleAction", Params, ?API_VERSION) of
+        {ok, Doc} ->
+            RequestId = erlcloud_xml:get_text(?COMPLETE_LIFECYCLE_ACTION_ACTIVITY, Doc),            
+            {ok, RequestId};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %% given a list of member identifiers, return a list of 
 %% {key with prefix, member identifier} for use in autoscaling calls.
 %% Example pair that could be returned in a list is 
 %% {"LaunchConfigurationNames.member.1", "my-launch-config}.
--spec member_params(string(), list(string())) -> list({string(), string()}).
+-spec member_params(string(), list(string())) -> list({string(), term()}).
 member_params(Prefix, MemberIdentifiers) ->
     MemberKeys = [Prefix ++ integer_to_list(I) || I <- lists:seq(1, length(MemberIdentifiers))],
     [{K, V} || {K, V} <- lists:zip(MemberKeys, MemberIdentifiers)].
@@ -330,7 +512,7 @@ get_text(Label, Doc) ->
 
 %% Based on erlcoud_ec2:ec2_query2()
 %% @TODO:  spec is too general with terms I think
--spec as_query(aws_config(), string(), list({string(), string()}), string()) -> {ok, term()} | {error, term}.
+-spec as_query(aws_config(), string(), list({string(), term()}), string()) -> {ok, term()} | {error, term()}.
 as_query(Config, Action, Params, ApiVersion) ->
     QParams = [{"Action", Action}, {"Version", ApiVersion}|Params],
     erlcloud_aws:aws_request_xml4(post, Config#aws_config.as_host, 

@@ -68,7 +68,7 @@
 %% to handle conditional check failures, match `{error,
 %% {<<"ConditionalCheckFailedException">>, _}}'.
 %%
-%% `erlcloud_ddb_impl' provides a higher level API that implements common
+%% `erlcloud_ddb_util' provides a higher level API that implements common
 %% operations that may require multiple DynamoDB API calls.
 %%
 %% See the unit tests for additional usage examples beyond what are
@@ -83,7 +83,8 @@
 -include("erlcloud_ddb2.hrl").
 
 %%% Library initialization.
--export([configure/2, configure/3, new/2, new/3]).
+-export([configure/2, configure/3, configure/4, configure/5,
+         new/2, new/3, new/4, new/5]).
 
 %%% DynamoDB API
 -export([batch_get_item/1, batch_get_item/2, batch_get_item/3,
@@ -91,6 +92,7 @@
          create_table/5, create_table/6, create_table/7,
          delete_item/2, delete_item/3, delete_item/4,
          delete_table/1, delete_table/2, delete_table/3,
+         describe_limits/0, describe_limits/1, describe_limits/2,
          describe_table/1, describe_table/2, describe_table/3,
          get_item/2, get_item/3, get_item/4,
          list_tables/0, list_tables/1, list_tables/2,
@@ -200,25 +202,50 @@
 %%% Library initialization.
 %%%------------------------------------------------------------------------------
 
--spec(new/2 :: (string(), string()) -> aws_config()).
+-spec new(string(), string()) -> aws_config().
 new(AccessKeyID, SecretAccessKey) ->
     #aws_config{access_key_id=AccessKeyID,
                 secret_access_key=SecretAccessKey}.
 
--spec(new/3 :: (string(), string(), string()) -> aws_config()).
+-spec new(string(), string(), string()) -> aws_config().
 new(AccessKeyID, SecretAccessKey, Host) ->
     #aws_config{access_key_id=AccessKeyID,
                 secret_access_key=SecretAccessKey,
                 ddb_host=Host}.
 
--spec(configure/2 :: (string(), string()) -> ok).
+-spec new(string(), string(), string(), non_neg_integer()) -> aws_config().
+new(AccessKeyID, SecretAccessKey, Host, Port) ->
+    #aws_config{access_key_id=AccessKeyID,
+                secret_access_key=SecretAccessKey,
+                ddb_host=Host,
+                ddb_port=Port}.
+
+-spec new(string(), string(), string(), non_neg_integer(), string()) -> aws_config().
+new(AccessKeyID, SecretAccessKey, Host, Port, Scheme) ->
+    #aws_config{access_key_id=AccessKeyID,
+                secret_access_key=SecretAccessKey,
+                ddb_host=Host,
+                ddb_port=Port,
+                ddb_scheme=Scheme}.
+
+-spec configure(string(), string()) -> ok.
 configure(AccessKeyID, SecretAccessKey) ->
     put(aws_config, new(AccessKeyID, SecretAccessKey)),
     ok.
 
--spec(configure/3 :: (string(), string(), string()) -> ok).
+-spec configure(string(), string(), string()) -> ok.
 configure(AccessKeyID, SecretAccessKey, Host) ->
     put(aws_config, new(AccessKeyID, SecretAccessKey, Host)),
+    ok.
+
+-spec configure(string(), string(), string(), non_neg_integer()) -> ok.
+configure(AccessKeyID, SecretAccessKey, Host, Port) ->
+    put(aws_config, new(AccessKeyID, SecretAccessKey, Host, Port)),
+    ok.
+
+-spec configure(string(), string(), string(), non_neg_integer(), string()) -> ok.
+configure(AccessKeyID, SecretAccessKey, Host, Port, Scheme) ->
+    put(aws_config, new(AccessKeyID, SecretAccessKey, Host, Port, Scheme)),
     ok.
 
 default_config() -> erlcloud_aws:default_config().
@@ -1112,7 +1139,7 @@ batch_get_item(RequestItems, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_BatchGetItems.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchGetItem.html]
 %%
 %% ===Example===
 %%
@@ -1239,7 +1266,7 @@ batch_write_item(RequestItems, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_BatchWriteItem.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html]
 %%
 %% ===Example===
 %%
@@ -1342,7 +1369,7 @@ create_table(Table, AttrDefs, KeySchema, ReadUnits, WriteUnits, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_CreateTable.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html]
 %%
 %% ===Example===
 %%
@@ -1434,7 +1461,7 @@ delete_item(Table, Key, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_DeleteItem.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html]
 %%
 %% ===Example===
 %%
@@ -1488,7 +1515,7 @@ delete_table(Table, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_DeleteTable.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteTable.html]
 %%
 %% ===Example===
 %%
@@ -1509,6 +1536,58 @@ delete_table(Table, Opts, Config) ->
                [{<<"TableName">>, Table}]),
     out(Return, fun(Json, UOpts) -> undynamize_record(delete_table_record(), Json, UOpts) end, 
         DdbOpts, #ddb2_delete_table.table_description).
+
+%%%------------------------------------------------------------------------------
+%%% DescribeLimits
+%%%------------------------------------------------------------------------------
+
+-spec describe_limits_record() -> record_desc().
+describe_limits_record() ->
+    {#ddb2_describe_limits{},
+     [{<<"AccountMaxReadCapacityUnits">>, #ddb2_describe_limits.account_max_read_capacity_units, fun id/2},
+      {<<"AccountMaxWriteCapacityUnits">>, #ddb2_describe_limits.account_max_write_capacity_units, fun id/2},
+      {<<"TableMaxReadCapacityUnits">>, #ddb2_describe_limits.table_max_read_capacity_units, fun id/2},
+      {<<"TableMaxWriteCapacityUnits">>, #ddb2_describe_limits.table_max_write_capacity_units, fun id/2}
+     ]}.
+
+-type describe_limits_return() :: ddb_return(#ddb2_describe_limits{}, #ddb2_describe_limits{}).
+
+-spec describe_limits() -> describe_limits_return().
+describe_limits() ->
+    describe_limits([], default_config()).
+
+-spec describe_limits(ddb_opts()) -> describe_limits_return().
+describe_limits(Opts) ->
+    describe_limits(Opts, default_config()).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% DynamoDB API:
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DescribeLimits.html]
+%%
+%% ===Example===
+%%
+%% Describe the current provisioned-capacity limits for your AWS account.
+%%
+%% `
+%% {ok, Limits} =
+%%     erlcloud_ddb2:describe_limits(),
+%% '
+%% @end
+%%------------------------------------------------------------------------------
+-spec describe_limits(ddb_opts(), aws_config()) -> describe_limits_return().
+describe_limits(Opts, Config) ->
+    {[], DdbOpts} = opts([], Opts),
+    Return = erlcloud_ddb_impl:request(
+               Config,
+               "DynamoDB_20120810.DescribeLimits",
+               []),
+    case out(Return, fun(Json, UOpts) -> undynamize_record(describe_limits_record(), Json, UOpts) end,
+             DdbOpts) of
+        {simple, Record} -> {ok, Record};
+        {ok, _} = Out -> Out;
+        {error, _} = Out -> Out
+    end.
 
 %%%------------------------------------------------------------------------------
 %%% DescribeTable
@@ -1534,7 +1613,7 @@ describe_table(Table, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_DescribeTables.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DescribeTable.html]
 %%
 %% ===Example===
 %%
@@ -1596,7 +1675,7 @@ get_item(Table, Key, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_GetItem.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html]
 %%
 %% ===Example===
 %%
@@ -1660,7 +1739,7 @@ list_tables(Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_ListTables.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ListTables.html]
 %%
 %% ===Example===
 %%
@@ -1732,7 +1811,7 @@ put_item(Table, Item, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_PutItem.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html]
 %%
 %% ===Example===
 %%
@@ -1836,7 +1915,7 @@ q(Table, KeyConditionsOrExpression, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_Query.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html]
 %%
 %% KeyConditions are treated as a required parameter, which appears to
 %% be the case despite what the documentation says.
@@ -1939,7 +2018,7 @@ scan(Table, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_Scan.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html]
 %%
 %% ===Example===
 %%
@@ -2048,7 +2127,7 @@ update_item(Table, Key, UpdatesOrExpression, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_UpdateItem.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html]
 %%
 %% AttributeUpdates is treated as a required parameter because callers
 %% will almost always provide it. If no updates are desired, You can
@@ -2145,18 +2224,18 @@ update_table(Table, Opts) ->
 %%------------------------------------------------------------------------------
 %% @doc 
 %% DynamoDB API:
-%% [http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/API_UpdateTable.html]
+%% [http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateTable.html]
 %%
 %% ===Example===
 %%
 %% Update table "Thread" to have 10 units of read and write capacity.
-%% Update secondary index <<"SubjectIdx">> to have 10 units of read write capacity 
-%% `
+%% Update secondary index `<<"SubjectIdx">>' to have 10 units of read write capacity
+%% ```
 %% erlcloud_ddb2:update_table(
 %%   <<"Thread">>,
 %%   [{provisioned_throughput, {10, 10}},
 %%    {global_secondary_index_updates, [{<<"SubjectIdx">>, 10, 10}]}])
-%% '
+%% '''
 %% @end
 %%------------------------------------------------------------------------------
 -spec update_table(table_name(), update_table_opts(), aws_config()) -> update_table_return();
